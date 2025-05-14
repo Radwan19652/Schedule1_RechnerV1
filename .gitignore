@@ -1,0 +1,22 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ===== Virtual Envs =====
+venv/
+env/
+.venv/
+
+# ===== IDE / Editor =====
+.vscode/
+.idea/
+
+# ===== Umgebungs- und Secrets =====
+.env
+*.secret
+credentials.json
+
+# ===== Logs & temporäre Dateien =====
+*.log
+tmp/

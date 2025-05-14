@@ -110,3 +110,52 @@ class SearchEngine:
                 heapq.heappush(open_list, (f_new, g_new, new_seq, new_eff))
 
         return best_seq, best_eff, best_cost, best_profit
+    
+    def find_best_sequence(
+        self,
+        desired_effects: List[str],
+        optimize_for: str,
+        base: str,
+        min_steps: int,
+        max_steps: int,
+        allowed_ingredients: Optional[List[str]],
+        timeout: float,
+        abort_callback: Optional[Callable[[], bool]] = None
+    ) -> Tuple[List[str], List[str], float, float]:
+        """
+        Führt find_sequence für jede Tiefe von min_steps bis max_steps aus
+        und liefert das profitabelste Ergebnis.
+        """
+        start = time.time()
+        abort = abort_callback or (lambda: False)
+
+        best_profit = float("-inf")
+        best_seq: List[str] = []
+        best_eff: List[str] = []
+        best_cost = 0.0
+
+        for depth in range(min_steps, max_steps + 1):
+            if abort():
+                break
+            elapsed = time.time() - start
+            if elapsed >= timeout:
+                break
+            remaining = timeout - elapsed
+
+            seq, eff, cost, profit = self.find_sequence(
+                desired_effects=desired_effects,
+                optimize_for=optimize_for,
+                base=base,
+                min_steps=depth,
+                max_steps=depth,
+                allowed_ingredients=allowed_ingredients,
+                timeout=remaining,
+                abort_callback=abort
+            )
+
+            if seq and profit > best_profit:
+                best_profit, best_cost = profit, cost
+                best_seq, best_eff = seq, eff
+
+        return best_seq, best_eff, best_cost, best_profit
+

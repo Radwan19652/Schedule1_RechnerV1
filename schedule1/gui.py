@@ -1,11 +1,81 @@
 import threading
 import time
+import cProfile
+import pstats
+import io
 from tkinter import StringVar, Listbox, Text, LEFT, RIGHT, BOTH, X, Y, WORD, END
 import ttkbootstrap as tb
 import logging
 from schedule1.calculator    import Calculator
 from schedule1.search_engine import SearchEngine
 from schedule1.timer         import CountdownTimer
+from multiprocessing import Process, Queue
+def run_search_process(
+    search_engine,
+    desired_effects,
+    optimize_for,
+    base,
+    min_steps,
+    max_steps,
+    allowed_ingredients,
+    timeout,
+    result_queue,
+    progress_queue
+):
+    """
+    Führt für jede Tiefe eine einzelne A*-Suche durch,
+    pusht Zwischenergebnisse in progress_queue und
+    liefert am Ende das beste Ergebnis + Profiling in result_queue.
+    """
+    start = time.time()
+    best_profit = float("-inf")
+    best_seq: list = []
+    best_eff: list = []
+    best_cost = 0.0
+
+    # Profiling starten
+    profiler = cProfile.Profile()
+    profiler.enable()
+
+    # Loop über alle Tiefen
+    for depth in range(min_steps, max_steps + 1):
+        elapsed = time.time() - start
+        if elapsed >= timeout:
+            break
+        remaining = timeout - elapsed
+
+        # Eine Tiefe durchsuchen
+        seq, eff, cost, profit = search_engine.find_sequence(
+            desired_effects=desired_effects,
+            optimize_for=optimize_for,
+            base=base,
+            min_steps=depth,
+            max_steps=depth,
+            allowed_ingredients=allowed_ingredients,
+            timeout=remaining,
+            abort_callback=lambda: False
+        )
+
+        # Zwischenergebnis melden
+        progress_queue.put((depth, profit, seq))
+
+        # Bestes Ergebnis merken
+        if seq and profit > best_profit:
+            best_profit, best_cost = profit, cost
+            best_seq, best_eff = seq, eff
+
+    # Profiling stoppen
+    profiler.disable()
+    buf = io.StringIO()
+    stats = pstats.Stats(profiler, stream=buf).sort_stats("cumtime")
+    stats.print_stats(10)                        # ← die Top-10 wirklich ins Buffer schreiben
+    profiling_output = buf.getvalue()
+
+    # Endergebnis und Profiling zurückgeben
+    result_queue.put((best_seq, best_eff, best_cost, best_profit))
+    result_queue.put(profiling_output)
+
+# GUI-Klasse für Schedule1
 class Schedule1App:
     def __init__(self):
         # Logger initialisieren
@@ -103,24 +173,96 @@ class Schedule1App:
         self.timer.configure(amounttotal=timeout, amountused=timeout)
 
         # Countdown starten
-        def tick(rem):
-            self.timer.configure(amountused=rem)
-        def done():
-            self.logger.info("Timer fertig.")
-        self.countdown = CountdownTimer(self.root, timeout, tick, done)
-        self.countdown.start()
-
+        #def tick(rem):
+        #    self.timer.configure(amountused=rem)
+        #def done():
+        #    self.logger.info("Timer fertig.")
+        #self.countdown = CountdownTimer(self.root, timeout, tick, done)
+        #self.countdown.start()
+        
         # Suche im Thread
-        threading.Thread(target=self._search_task,
-                         args=(min_s, max_s, allowed, base, timeout),
-                         daemon=True).start()
+        #threading.Thread(target=self._search_task,
+        #                 args=(min_s, max_s, allowed, base, timeout),
+        #                 daemon=True).start()
+
+        # Suche per eigenem Prozess starten
+        self.search_start = time.time()
+        self.find_btn.configure(state="disabled")
+        self.cancel_btn.configure(state="normal")
+
+        # Ergebnis-Queue und Prozess aufsetzen
+        self.result_queue = Queue()
+        self.progress_queue = Queue()
+        self.search_process = Process(
+            target=run_search_process,
+            args=(
+                self.search,
+                [],                 # desired_effects
+                self.opt_var.get(), # optimize_for
+                base,
+                min_s,
+                max_s,
+                allowed,
+                timeout,
+                self.result_queue,
+                self.progress_queue
+            ),
+            daemon=True
+        )
+        self.search_process.start()
+
+        # Meter-Updates alle 100 ms planen
+        self.root.after(100, self._update_meter)
 
     def on_cancel(self):
-        self.abort_flag = True
-        self.cancel_btn.configure(state='disabled')
-        self.countdown.stop()
-        self.find_btn.configure(state='normal')
-        self.logger.info("Abgebrochen.")
+        # Wenn ein Such-Prozess läuft, beende ihn
+        if hasattr(self, "search_process") and self.search_process.is_alive():
+            self.search_process.terminate()
+            self.logger.info("Suche abgebrochen.")
+        # Buttons zurücksetzen
+        self.cancel_btn.configure(state="disabled")
+        self.find_btn.configure(state="normal")
+        
+    def _update_meter(self):
+        """
+        Aktualisiert das Meter-Widget unabhängig vom Such-Loop,
+        zeigt live die Tiefe-Updates im Log und am Ende das Profiling.
+        """
+        # 0) Alle Zwischenergebnisse aus progress_queue lesen und ins Log schreiben
+        while not self.progress_queue.empty():
+            depth, profit, seq = self.progress_queue.get()
+            self.log_txt.insert(END, f"Tiefe {depth}: profit={profit:.2f}, seq={seq}\n")
+            self.log_txt.see(END)
+
+        # 1) Verbleibende Zeit berechnen und Meter aktualisieren
+        elapsed = time.time() - self.search_start
+        remaining = max(0.0, float(self.timeout_sb.get()) - elapsed)
+        self.timer.configure(amountused=remaining)
+
+        # 2) Solange der Prozess noch läuft und Zeit übrig ist, erneut planen
+        if self.search_process.is_alive() and remaining > 0:
+            self.root.after(100, self._update_meter)
+            return
+
+        # 3) Jetzt ist Suche fertig oder Timeout:
+        if self.search_process.is_alive():
+            # Timeout: Prozess abbrechen
+            self.search_process.terminate()
+            self.logger.info("Timeout – Suche abgebrochen.")
+        else:
+            # Suche abgeschlossen: Endergebnis + Profiling aus result_queue lesen
+            best_seq, best_eff, best_cost, best_profit = self.result_queue.get()
+            profiling_output = self.result_queue.get()
+
+            # Endergebnis ausgeben
+            self.log_txt.insert(END, f"\n=== Fertig: profit={best_profit:.2f}, seq={best_seq}\n")
+            # Profiling-Statistiken ausgeben
+            self.log_txt.insert(END, "\n--- Profiling (Top 10) ---\n" + profiling_output)
+            self.log_txt.see(END)
+
+        # 4) Buttons zurücksetzen
+        self.find_btn.configure(state="normal")
+        self.cancel_btn.configure(state="disabled")
 
     def _search_task(self, min_s, max_s, allowed, base, timeout):
         start = time.time()
@@ -138,11 +280,16 @@ class Schedule1App:
                 self.logger.info("Timeout erreicht, breche ab.")
                 break
             remaining = timeout - elapsed
-
+            # Verbleibende Zeit ins Log-Panel schreiben
+            self.log_txt.insert(END, f"Verbleibende Zeit: {remaining:.2f} s\n")
+            self.log_txt.see(END)
             # Meter updaten
             self.root.after(0, lambda v=idx:       self.progress.configure(amountused=v))
             self.root.after(0, lambda r=remaining:self.timer   .configure(amountused=r))
-
+            
+            # Profiling starten 
+            #profiler = cProfile.Profile()
+            #profiler.enable()
             # Suche
             seq, eff, cost, profit = self.search.find_sequence(
                 desired_effects=[],
@@ -154,14 +301,26 @@ class Schedule1App:
                 timeout=remaining,
                 abort_callback=lambda: self.abort_flag
             )
+            #Profiling stoppen
+            #profiler.disable()
+            # Top 10 Zeitfresser ermitteln
+            #buf = io.StringIO()
+            #stats = pstats.Stats(profiler, stream=buf).sort_stats("cumtime")
+            #stats.print_stats(10)
+            #profiling_output = buf.getvalue()
+            # Profiling-Ergebnis in dein Log-Panel schreiben
+            #self.log_txt.insert(END, f"Profit: {profit}\n")
+            #self.log_txt.insert(END, "\n--- Profiling (Top 10) ---\n" + profiling_output)
+            self.log_txt.see(END)
             self.logger.info(f"Tiefe {depth}: profit={profit:.2f}, seq={seq}")
+
             if seq and profit > best_profit:
                 best_profit, best_cost = profit, cost
                 best_seq, best_eff     = seq, eff
 
         # Am Ende: Buttons zurücksetzen und Ergebnis anzeigen
         def _finish():
-            self.countdown.stop()
+            #self.countdown.stop()
             self.find_btn.configure(state='normal')
             self.cancel_btn.configure(state='disabled')
             if best_seq:
