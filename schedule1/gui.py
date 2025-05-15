@@ -125,7 +125,7 @@ class Schedule1App:
 
         # Notebook **nur** für die beiden Listen
         self.notebook = tb.Notebook(sidebar)
-        self.notebook.pack(fill=X, pady=5)
+        self.notebook.pack(fill=X, pady=5, expand=True)
 
         # Tab 1: Effekte (Liste)
         effects_frame = tb.Frame(self.notebook)
@@ -134,9 +134,9 @@ class Schedule1App:
         # Desired Effects im Effekte-Tab
         tb.Label(effects_frame, text="Desired Effects").pack(anchor="w")
         self.effects_lb = Listbox(effects_frame, selectmode="multiple", height=8)
-        for effect in sorted(self.calc.items_data.keys()):
+        for effect in sorted(self.calc.EFFECT_MULTIPLIERS.keys()):
             self.effects_lb.insert(END, effect)
-        self.effects_lb.pack(fill=X)
+        self.effects_lb.pack(fill=X, expand=True)
 
         # Tab 2: Zutaten (Liste)
         ingredients_frame = tb.Frame(self.notebook)
@@ -147,9 +147,9 @@ class Schedule1App:
         self.ingredients_lb = Listbox(
             ingredients_frame, selectmode="multiple", height=8
         )
-        for ing in sorted(self.calc.items_data.keys()):
+        for ing in sorted(self.calc.INGREDIENT_PRICES.keys()):
             self.ingredients_lb.insert(END, ing)
-        self.ingredients_lb.pack(fill=X)
+        self.ingredients_lb.pack(fill=X, expand=True)
 
         # Optimize for
         self.opt_var = StringVar(value="profit")
