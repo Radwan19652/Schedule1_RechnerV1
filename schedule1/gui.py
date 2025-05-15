@@ -3,7 +3,7 @@ import time
 import cProfile
 import pstats
 import io
-from tkinter import StringVar, Listbox, Text, BooleanVar, Checkbutton, LEFT, RIGHT, BOTH, X, Y, WORD, END
+from tkinter import StringVar, Listbox, Text, BooleanVar, Checkbutton, LEFT, RIGHT, BOTH, X, Y, WORD, END, BOTTOM
 import ttkbootstrap as tb
 import logging
 from schedule1.calculator    import Calculator
@@ -114,21 +114,42 @@ class Schedule1App:
         self.abort_flag = False
 
         # GUI
-        style = tb.Style(theme="darkly")
-        self.root = style.master
+        self.style = tb.Style(theme="darkly")
+        self.root = self.style.master
         self.root.title("Schedule1 OOP")
         self.root.geometry("900x600")
 
-        # Sidebar
+        # Sidebar für Controls
         sidebar = tb.Frame(self.root, padding=10)
         sidebar.pack(side=LEFT, fill=Y)
 
-        # Desired Effects
-        tb.Label(sidebar, text="Desired Effects").pack(anchor="w")
-        self.effects_lb = Listbox(sidebar, selectmode="multiple", height=8)
-        for e in sorted(self.calc.items_data.keys()):
-            self.effects_lb.insert(END, e)
+        # Notebook **nur** für die beiden Listen
+        self.notebook = tb.Notebook(sidebar)
+        self.notebook.pack(fill=X, pady=5)
+
+        # Tab 1: Effekte (Liste)
+        effects_frame = tb.Frame(self.notebook)
+        self.notebook.add(effects_frame, text="Effekte")
+
+        # Desired Effects im Effekte-Tab
+        tb.Label(effects_frame, text="Desired Effects").pack(anchor="w")
+        self.effects_lb = Listbox(effects_frame, selectmode="multiple", height=8)
+        for effect in sorted(self.calc.items_data.keys()):
+            self.effects_lb.insert(END, effect)
         self.effects_lb.pack(fill=X)
+
+        # Tab 2: Zutaten (Liste)
+        ingredients_frame = tb.Frame(self.notebook)
+        self.notebook.add(ingredients_frame, text="Zutaten")
+
+        # Allowed Ingredients im Zutaten-Tab anlegen
+        tb.Label(ingredients_frame, text="Allowed Ingredients").pack(anchor="w")
+        self.ingredients_lb = Listbox(
+            ingredients_frame, selectmode="multiple", height=8
+        )
+        for ing in sorted(self.calc.items_data.keys()):
+            self.ingredients_lb.insert(END, ing)
+        self.ingredients_lb.pack(fill=X)
 
         # Optimize for
         self.opt_var = StringVar(value="profit")
@@ -179,6 +200,27 @@ class Schedule1App:
         )
         self.profile_chk.pack(side=LEFT, padx=5)
 
+        # Bottom Bar: Theme-Umschalter
+        bottom_frame = tb.Frame(self.root, padding=(5,5))
+        bottom_frame.pack(side=BOTTOM, fill=X)
+
+        tb.Label(bottom_frame, text="Theme:", width=8).pack(side=LEFT)
+        # Theme-Variable initialisieren
+        self.theme_var = StringVar(value="darkly")
+        # als Outline.TButton-styled OptionMenu
+        theme_menu = tb.OptionMenu(
+            bottom_frame,
+            self.theme_var,
+            *self.style.theme_names(),
+            command=self.change_theme,
+            bootstyle="outline-secondary"
+        )
+        theme_menu.pack(side=LEFT)
+
+    def change_theme(self, new_theme: str):
+        """Wechselt das aktuelle Theme."""
+        self.style.theme_use(new_theme)
+
         # Einziger Text-Handler fürs Logging in log_txt
         class TextHandler(logging.Handler):
             def __init__(self, widget):
@@ -206,7 +248,18 @@ class Schedule1App:
         min_s = int(self.min_sb.get())
         max_s = int(self.max_sb.get())
         timeout = float(self.timeout_sb.get())
-        allowed = None  # oder aus einer Listbox auslesen
+
+        # Gewählte Effekte aus dem Effekte-Tab lesen
+        selected_effects = [
+            self.effects_lb.get(i)
+            for i in self.effects_lb.curselection()
+        ]
+        # Erlaubte Zutaten aus dem Zutaten-Tab lesen
+        allowed = [
+            self.ingredients_lb.get(i)
+            for i in self.ingredients_lb.curselection()
+        ]
+
         base = "Meth"   # falls GUI dazu
 
         # Meters
@@ -226,7 +279,7 @@ class Schedule1App:
             target=run_search_process,
             args=(
                 self.search,
-                [],                 # desired_effects
+                selected_effects,   # desired_effects aus GUI
                 self.opt_var.get(), # optimize_for
                 base,
                 min_s,
