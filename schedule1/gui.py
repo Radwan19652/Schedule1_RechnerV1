@@ -117,7 +117,8 @@ class Schedule1App:
         self.style = tb.Style(theme="darkly")
         self.root = self.style.master
         self.root.title("Schedule1 OOP")
-        self.root.geometry("900x600")
+        # Vollbild beim Start setzen
+        self.root.attributes('-fullscreen', True)  # Echter Vollbildmodus ohne Rahmen
 
         # Sidebar für Controls
         sidebar = tb.Frame(self.root, padding=10)
@@ -200,6 +201,18 @@ class Schedule1App:
         )
         self.profile_chk.pack(side=LEFT, padx=5)
 
+        # Größenänderungs-Button (einmal erstellen)
+        self.resize_btn = tb.Button(
+            self.control_frame,
+            text="Größe ändern",
+            command=self.toggle_fullscreen,
+            bootstyle="info"  # Optisch von anderen Buttons unterscheiden
+        )
+        self.resize_btn.pack(side=LEFT, padx=5)
+
+            # Speichere den Vollbildstatus
+        self.is_fullscreen = True
+
         # Bottom Bar: Theme-Umschalter
         bottom_frame = tb.Frame(self.root, padding=(5,5))
         bottom_frame.pack(side=BOTTOM, fill=X)
@@ -216,6 +229,22 @@ class Schedule1App:
             bootstyle="outline-secondary"
         )
         theme_menu.pack(side=LEFT)
+        
+        # Escape-Taste zum Verlassen des Vollbildmodus
+        self.root.bind('<Escape>', lambda e: self.exit_fullscreen())
+
+    # Escape
+    def exit_fullscreen(self):
+    # Verlässt den Vollbildmodus wird bei Escape-Taste ausgelöst
+        if self.is_fullscreen:
+            self.root.attributes('-fullscreen', False)  # Vollbild deaktivieren
+            self.root.geometry("900x600")  # Normale Größe setzen
+            self.resize_btn.config(text="Vollbild")
+            self.is_fullscreen = False
+
+    # Fenster Größe ändern    
+    def resize_window(self, width, height):
+        self.root.geometry(f"{width}x{height}")
 
     def change_theme(self, new_theme: str):
         """Wechselt das aktuelle Theme."""
@@ -305,6 +334,20 @@ class Schedule1App:
         # Buttons zurücksetzen
         self.cancel_btn.configure(state="disabled")
         self.find_btn.configure(state="normal")
+
+    # Toggle für Vollbild Wechselt zwischen Vollbild und Normalgröße
+    def toggle_fullscreen(self):
+        if self.is_fullscreen:
+            # Zu Normalgröße wechseln
+            self.root.attributes('-fullscreen', False)  # Vollbild deaktivieren
+            self.root.geometry("900x600")  # Normale Größe setzen
+            self.resize_btn.config(text="Vollbild")
+            self.is_fullscreen = False
+        else:
+            # Zu Vollbild wechseln
+            self.root.attributes('-fullscreen', True)  # Vollbild aktivieren
+            self.resize_btn.config(text="Normalgröße")
+            self.is_fullscreen = True
         
     def _update_meter(self):
         """
