@@ -191,4 +191,3 @@ class SearchEngine:
                     best_seq, best_eff = seq, eff
 
         return best_seq, best_eff, best_cost, best_profit
-
